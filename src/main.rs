@@ -1,4 +1,8 @@
 extern crate tcod;
+extern crate rand;
+
+use std::cmp;
+use rand::Rng;
 
 use tcod::console::*;
 use tcod::colors::{self, Color};
@@ -10,14 +14,55 @@ const SCREEN_HEIGHT: i32 = 50;
 //FPS Maximum
 const FPS_LIMIT: i32 = 20;
 
-
+//Map window size
 const MAP_WIDTH: i32 = 80;
 const MAP_HEIGHT: i32 = 45;
 
+//Tile colors
 const COLOR_DARK_WALL: Color = Color { r: 0, g: 0, b: 100 };
 const COLOR_DARK_GROUND: Color = Color { r: 50, g: 50, b: 150 };
 
+
+//Room constraints
+const ROOM_MAX_SIZE: i32 = 10;
+const ROOM_MIN_SIZE: i32 = 6;
+const MAX_ROOMS: i32 = 30;
+
+
 type Map = Vec<Vec<Tile>>;
+
+/////////////////////////////
+//////
+//////    Structs
+//////
+/////////////////////////////
+
+#[derive(Clone, Copy, Debug)]
+struct Rect {
+	x1: i32,
+	x2: i32,
+	y1: i32,
+	y2: i32,
+}
+
+impl Rect {
+	pub fn new(x: i32, y: i32, w: i32, h: i32) -> Self {
+		Rect{ x1: x, y1: y, x2: x + w, y2: y + h}
+	}
+
+	pub fn center(&self) -> (i32, i32) {
+		let center_x = (self.x1 + self.x2) / 2;
+		let center_y = (self.y1 + self.y2) / 2;
+		(center_x, center_y)
+	}
+
+	pub fn intersects_with(&self, other: &Rect) -> bool {
+		//returns true if this rectangle intersects with another one
+		(self.x1 <= other.x2) && (self.x2 >= other.x1) &&
+			(self.y1 <= other.y2) && (self.y2 >= other.y1)
+	}
+
+}
 
 #[derive(Clone, Copy, Debug)]
 struct Tile {
@@ -71,17 +116,93 @@ impl Object {
 	}
 }
 
-fn make_map() -> Map {
-	// fill the map with unblocked tiles
-	let mut map = vec![vec![Tile::empty(); MAP_HEIGHT as usize]; MAP_WIDTH as usize];
+/////////////////////
+/////
+/////
+/////
+/////////////////////
 
-	// place two pillars to test the map
-	map[30][22] = Tile::wall();
-	map[50][22] = Tile::wall();
+fn make_map() -> (Map, (i32, i32)) {
+	// fill map with wall tiles
+	let mut map = vec![vec![Tile::wall(); MAP_HEIGHT as usize]; MAP_WIDTH as usize];
+	let mut rooms = vec![];
+	let mut starting_position = (0, 0);
 
-	map
+	for _ in 0..MAX_ROOMS {
+		//random width and height
+		let w = rand::thread_rng().gen_range(ROOM_MIN_SIZE, ROOM_MAX_SIZE + 1);
+		let h = rand::thread_rng().gen_range(ROOM_MIN_SIZE, ROOM_MAX_SIZE + 1);
+
+		//random position without going out of the map boundaries
+		let x = rand::thread_rng().gen_range(0, MAP_WIDTH - w);
+		let y = rand::thread_rng().gen_range(0, MAP_HEIGHT - h);
+
+	
+
+		let new_room = Rect::new(x, y, w, h);
+
+		// run through the other rooms and see if they intersect with this one
+		let failed = rooms.iter().any(|other_room| new_room.intersects_with(other_room));
+
+		if !failed {
+				// No intersections, so room is valid
+
+				create_room(new_room, &mut map);
+
+				// center coordinates of the new room, useful later
+				let (new_x, new_y) = new_room.center();
+
+				if rooms.is_empty() {
+					// this is the first room where the player starts
+					starting_position = (new_x, new_y);
+				} else {
+					// all rooms after the first:
+					// Connect it to the previous room with a runnel
+
+					// center coordinates of the previous room
+					let (prev_x, prev_y) = rooms[rooms.len() -1].center();
+
+					// flip a coin
+					if rand::random() {
+						//first move horizontally, then vertically
+						create_h_tunnel(prev_x, new_x, prev_y, &mut map);
+						create_v_tunnel(prev_y, new_y, new_x, &mut map);
+					} else {
+						// first move vertically, then horizontally
+						create_v_tunnel(prev_y, new_y, prev_x, &mut map);
+						create_h_tunnel(prev_x, new_x, new_y, &mut map);
+					}
+				
+				}
+
+			// finally append the new room to the list
+			rooms.push(new_room);
+		}
+	}
+
+
+	(map, starting_position)
 }
 
+fn create_room(room: Rect, map: &mut Map) {
+	for x in (room.x1 + 1)..room.x2 {
+		for y in (room.y1 + 1)..room.y2 {
+			map[x as usize][y as usize] = Tile::empty();
+		}
+	}
+}
+
+fn create_h_tunnel(x1: i32, x2: i32, y: i32, map: &mut Map){
+	for x in cmp::min(x1, x2)..(cmp::max(x1, x2) + 1) {
+		map[x as usize][y as usize] = Tile::empty();
+	}
+}
+
+fn create_v_tunnel(y1: i32, y2: i32, x: i32, map: &mut Map){
+	for y in cmp::min(y1, y2)..(cmp::max(y1, y2) + 1) {
+		map[x as usize][y as usize] = Tile::empty();
+	}
+}
 
 fn handle_keys(root: &mut Root, player: &mut Object, map: &Map) -> bool {
 
@@ -147,8 +268,13 @@ fn main() {
 
     let mut con = Offscreen::new(MAP_WIDTH, MAP_HEIGHT);
 
-    // create object representing the player
-    let player = Object::new(SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2, '@', colors::WHITE);
+    
+    // generate map
+    let (map, (player_x, player_y)) = make_map();
+
+
+    // Place player inside first room
+    let player = Object::new(player_x, player_y, '@', colors::WHITE);
 
     // create an NPC
     let npc = Object::new(SCREEN_WIDTH / 2 - 5, SCREEN_HEIGHT / 2, '@', colors::YELLOW);
@@ -156,8 +282,6 @@ fn main() {
     // the list of objects with those two
     let mut objects = [player, npc];
 
-    // generate map
-    let map = make_map();
     
     while !root.window_closed() {
 

@@ -1,8 +1,9 @@
 [package]
-name = "Dragonslayer-rust"
-version = "0.1.0"
+name = "dragonslayer-rust"
+version = "0.4.0"
 authors = ["jay"]
 edition = "2018"
 
 [dependencies]
 tcod = "0.14"
+rand = "0.3.9"
