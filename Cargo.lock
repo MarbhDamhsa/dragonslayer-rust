@@ -12,7 +12,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
 name = "dragonslayer-rust"
-version = "0.6.2"
+version = "0.7.0"
 dependencies = [
  "rand 0.3.23 (registry+https://github.com/rust-lang/crates.io-index)",
  "tcod 0.14.0 (registry+https://github.com/rust-lang/crates.io-index)",
